@@ -72,4 +72,7 @@ for (i in 1998:2011) {
   }
   
 }
-write_rds(final.hcris.v1996,'Users/genevievedebell/Documents/GitHub/hwk2/data/output/HCRIS_Data_v1996.rds')
+install.packages("readr")
+library(readr)
+write_rds(final.hcris.v1996,"data/output/HCRIS_Data_v1996.rds")
+
