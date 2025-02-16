@@ -62,4 +62,78 @@ ggplot(final.hcris.data_clean, aes(x = as.factor(year), y = price)) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
+# Calculate price and define penalty
+final.hcris.data <- final.hcris.data %>%
+  mutate(
+    discount_factor = 1 - tot_discounts / tot_charges,
+    price_num = (ip_charges + icu_charges + ancillary_charges) * discount_factor - tot_mcare_payment,
+    price_denom = tot_discharges - mcare_discharges,
+    price = price_num / price_denom
+  )
 
+# Filter for 2012 and define penalty
+final.hcris <- final.hcris.data %>%
+  ungroup() %>%
+  filter(
+    price_denom > 100, !is.na(price_denom),
+    price_num > 0, !is.na(price_num),
+    price < 100000,
+    beds > 30,
+    year == 2012
+  ) %>%
+  mutate(
+    hvbp_payment = ifelse(is.na(hvbp_payment), 0, hvbp_payment),
+    hrrp_payment = ifelse(is.na(hrrp_payment), 0, abs(hrrp_payment)),
+    penalty = (hvbp_payment - hrrp_payment) < 0  # TRUE/FALSE
+  )
+# Calculate mean prices for penalized vs non-penalized hospitals
+mean.pen <- round(mean(final.hcris.data$price[final.hcris.data$penalty == TRUE], na.rm = TRUE), 2)
+mean.nopen <- round(mean(final.hcris.data$price[final.hcris.data$penalty == FALSE], na.rm = TRUE), 2)
+
+# Print results
+cat("Mean price for penalized hospitals:", mean.pen, "\n")
+cat("Mean price for non-penalized hospitals:", mean.nopen, "\n")
+
+
+# Filter dataset for 2012
+final.hcris.2012 <- final.hcris.data %>%
+  filter(year == 2012)
+
+# Define penalty: HVBP + HRRP < 0
+final.hcris.2012 <- final.hcris.2012 %>%
+  mutate(
+    hvbp_payment = ifelse(is.na(hvbp_payment), 0, hvbp_payment),
+    hrrp_payment = ifelse(is.na(hrrp_payment), 0, hrrp_payment),
+    penalty = (hvbp_payment + hrrp_payment) < 0
+  )
+
+# Calculate bed size quartiles
+bed_quartiles <- quantile(final.hcris.2012$beds, probs = c(0.25, 0.50, 0.75), na.rm = TRUE)
+
+# Assign each hospital to a bed size quartile
+final.hcris.2012 <- final.hcris.2012 %>%
+  mutate(
+    Q1 = ifelse(beds <= bed_quartiles[1], 1, 0),
+    Q2 = ifelse(beds > bed_quartiles[1] & beds <= bed_quartiles[2], 1, 0),
+    Q3 = ifelse(beds > bed_quartiles[2] & beds <= bed_quartiles[3], 1, 0),
+    Q4 = ifelse(beds > bed_quartiles[3], 1, 0)
+  )
+
+# Calculate average prices by quartile and penalty status
+quartile_summary <- final.hcris.2012 %>%
+  mutate(bed_quartile = case_when(
+    Q1 == 1 ~ "Q1",
+    Q2 == 1 ~ "Q2",
+    Q3 == 1 ~ "Q3",
+    Q4 == 1 ~ "Q4"
+  )) %>%
+  group_by(bed_quartile, penalty) %>%
+  summarise(avg_price = mean(price, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = penalty, values_from = avg_price, names_prefix = "penalty_")
+
+# Print the table
+print(quartile_summary)
+# Print the final table
+print(quartile_summary)
+
+save.image("summarize.RData")

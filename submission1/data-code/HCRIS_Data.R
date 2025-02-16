@@ -142,5 +142,3 @@ final.hcris.data =
 
 write_rds(final.hcris.data,'data/output/HCRIS_Data.rds')
 
-# Check the column names of the final dataset
-colnames(final.hcris.data)

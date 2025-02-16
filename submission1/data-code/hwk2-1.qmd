@@ -21,3 +21,5 @@ pacman::p_load(tidyverse, ggplot2, dplyr, lubridate, readr, readxl, hrbrthemes, 
                ggrepel, survey, foreign, devtools, pdftools, kableExtra, modelsummary,
                kableExtra)
 ```
+```{r}
+load("summarize.RData")
