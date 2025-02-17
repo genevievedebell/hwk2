@@ -108,11 +108,12 @@ bed_quartiles <- quantile(final.hcris.2012$beds, probs = c(0.25, 0.50, 0.75), na
 # Assign each hospital to a bed size quartile
 final.hcris.2012 <- final.hcris.2012 %>%
   mutate(
-    Q1 = ifelse(beds <= bed_quartiles[1], 1, 0),
+    Q1 = ifelse(beds <= bed_quartiles[1] & beds > 0, 1, 0),
     Q2 = ifelse(beds > bed_quartiles[1] & beds <= bed_quartiles[2], 1, 0),
     Q3 = ifelse(beds > bed_quartiles[2] & beds <= bed_quartiles[3], 1, 0),
     Q4 = ifelse(beds > bed_quartiles[3], 1, 0)
   )
+ 
 
 # Calculate average prices by quartile and penalty status
 quartile_summary <- final.hcris.2012 %>%
@@ -146,12 +147,39 @@ library(broom)
 library(sandwich)
 library(lmtest)
 
-m.nn.var <- Matching::Match(Y=final.hcris.2012$price,
-                            Tr=final.hcris.2012$penalty,
+
+lp.covs <- final.hcris.2012 %>%
+select(Q1, Q2, Q3, Q4) %>%
+na.omit()
+
+lp.vars <- final.hcris.2012 %>%
+select(price, penalty) %>%
+na.omit()
+
+m.nn.var <- Matching::Match(Y=lp.vars$price,
+                            Tr=lp.vars$penalty,
                             X=lp.covs,
-                            M=4,  #<< 4 nearest neighbbors 
+                            M=1,  #<< 4 nearest neighbbors 
                             Weight=1,
                             estimand="ATE")
 
-v.name=final.hcris.2012(new=c("Beds","Medicaid Discharges", "Inaptient Charges",
-                   "Medicare Discharges", "Medicare Payments"))
+v.name=data.frame(new=c("Q1","Q2",
+                   "Q3", "Q4"))
+
+# Nearest neighbor matching (1-to-1) with Mahalanobis distance based on quartiles of bed size
+m.nn.md <- Matching::Match(Y=lp.vars$price,
+                           Tr=lp.vars$penalty,
+                           X=lp.covs,
+                           M=1,
+                           Weight=2,
+                           estimand="ATE")
+
+# Inverse propensity weighting, where the propensity scores are based on quartiles of bed size
+logit.model <- glm(penalty ~ Q1 + Q2 + Q3 + Q4, family=binomial, data=final.hcris.2012)
+ps <- fitted(logit.model)
+m.nn.ps <- Matching::Match(Y=lp.vars$price,
+                           Tr=lp.vars$penalty,
+                           X=ps,
+                           M=1,
+                           estimand="ATE")
+final.hcris.2012 <- 
