@@ -52,6 +52,7 @@ final.hcris.data_clean <- final.hcris.data %>%
   filter(!is.na(price) & price > 0)
 
 # Step 3: Create a violin plot to show the distribution of estimated prices by year
+log_price = 
 ggplot(final.hcris.data_clean, aes(x = as.factor(year), y = price)) +
   geom_violin(trim = TRUE, fill = "skyblue", color = "black") +
   labs(
