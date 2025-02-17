@@ -72,7 +72,7 @@ final.hcris.data <- final.hcris.data %>%
   )
 
 # Filter for 2012 and define penalty
-final.hcris <- final.hcris.data %>%
+final.hcris.2012 <- final.hcris.data %>%
   ungroup() %>%
   filter(
     price_denom > 100, !is.na(price_denom),
@@ -87,20 +87,15 @@ final.hcris <- final.hcris.data %>%
     penalty = (hvbp_payment - hrrp_payment) < 0  # TRUE/FALSE
   )
 # Calculate mean prices for penalized vs non-penalized hospitals
-mean.pen <- round(mean(final.hcris.data$price[final.hcris.data$penalty == TRUE], na.rm = TRUE), 2)
-mean.nopen <- round(mean(final.hcris.data$price[final.hcris.data$penalty == FALSE], na.rm = TRUE), 2)
+mean.pen <- round(mean(final.hcris.2012$price[final.hcris.2012$penalty == TRUE], na.rm = TRUE), 2)
+mean.nopen <- round(mean(final.hcris.2012$price[final.hcris.2012$penalty == FALSE], na.rm = TRUE), 2)
 
 # Print results
 cat("Mean price for penalized hospitals:", mean.pen, "\n")
 cat("Mean price for non-penalized hospitals:", mean.nopen, "\n")
 
-
-# Filter dataset for 2012
-final.hcris.2012 <- final.hcris.data %>%
-  filter(year == 2012)
-
 # Define penalty: HVBP + HRRP < 0
-final.hcris.2012 <- final.hcris.2012 %>%
+final.hcris.2012 <- final.hcris %>%
   mutate(
     hvbp_payment = ifelse(is.na(hvbp_payment), 0, hvbp_payment),
     hrrp_payment = ifelse(is.na(hrrp_payment), 0, hrrp_payment),
@@ -133,6 +128,30 @@ quartile_summary <- final.hcris.2012 %>%
 
 # Print the table
 print(quartile_summary)
-# Print the final table
-print(quartile_summary)
 
+# Find the average treatment effect using each of the following estimators, and present your results in a single table:
+
+## Nearest neighbor matching (1-to-1) with inverse variance distance based on quartiles of bed size
+
+ install.packages("MatchIt")    # For nearest neighbor matching
+install.packages("WeightIt")    # For inverse propensity weighting
+install.packages("broom")       # For cleaning model outputs
+install.packages("sandwich")    # For robust standard errors
+install.packages("lmtest")
+install.packages("Matching")
+library(dplyr)
+library(MatchIt)
+library(WeightIt)
+library(broom)
+library(sandwich)
+library(lmtest)
+
+m.nn.var <- Matching::Match(Y=final.hcris.2012$price,
+                            Tr=final.hcris.2012$penalty,
+                            X=lp.covs,
+                            M=4,  #<< 4 nearest neighbbors 
+                            Weight=1,
+                            estimand="ATE")
+
+v.name=final.hcris.2012(new=c("Beds","Medicaid Discharges", "Inaptient Charges",
+                   "Medicare Discharges", "Medicare Payments"))
