@@ -48,12 +48,12 @@ final.hcris.data <- final.hcris.data %>%
   )
 
 # Step 2: Filter out negative or invalid prices and any other outliers (e.g., top 1% of prices)
-final.hcris.data_clean <- final.hcris.data %>%
-  filter(!is.na(price) & price > 0)
-
+final.hcris.data <- final.hcris.data %>%
+  filter(!is.na(price) & price > 0) %>%
+mutate(log_price = log(price))
 # Step 3: Create a violin plot to show the distribution of estimated prices by year
-log_price = 
-ggplot(final.hcris.data_clean, aes(x = as.factor(year), y = price)) +
+
+ggplot(final.hcris.data_clean, aes(x = as.factor(year), y = log_price)) +
   geom_violin(trim = TRUE, fill = "skyblue", color = "black") +
   labs(
     title = "Distribution of Estimated Prices by Year",
@@ -64,13 +64,14 @@ ggplot(final.hcris.data_clean, aes(x = as.factor(year), y = price)) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 # Calculate price and define penalty
-final.hcris.data <- final.hcris.data %>%
+final.hcris.data.2012 <- final.hcris.data %>%
   mutate(
     discount_factor = 1 - tot_discounts / tot_charges,
     price_num = (ip_charges + icu_charges + ancillary_charges) * discount_factor - tot_mcare_payment,
     price_denom = tot_discharges - mcare_discharges,
-    price = price_num / price_denom
+    price = price_num / price_denom, NA_real_
   )
+
 
 # Filter for 2012 and define penalty
 final.hcris.2012 <- final.hcris.data %>%
@@ -96,7 +97,7 @@ cat("Mean price for penalized hospitals:", mean.pen, "\n")
 cat("Mean price for non-penalized hospitals:", mean.nopen, "\n")
 
 # Define penalty: HVBP + HRRP < 0
-final.hcris.2012 <- final.hcris %>%
+final.hcris.2012 <- final.hcris.data %>%
   mutate(
     hvbp_payment = ifelse(is.na(hvbp_payment), 0, hvbp_payment),
     hrrp_payment = ifelse(is.na(hrrp_payment), 0, hrrp_payment),
@@ -109,12 +110,18 @@ bed_quartiles <- quantile(final.hcris.2012$beds, probs = c(0.25, 0.50, 0.75), na
 # Assign each hospital to a bed size quartile
 final.hcris.2012 <- final.hcris.2012 %>%
   mutate(
+    Q1 = as.numeric((beds <= bed_quartiles[1]) & (beds > 0)),
+    Q2 = as.numeric((beds > bed_quartiles[1]) & (beds <= bed_quartiles[2])),
+    Q3 = as.numeric((beds > bed_quartiles[2]) & (beds <= bed_quartiles[3])),
+    Q4 = as.numeric(beds > bed_quartiles[3])
+  )
+final.hcris.2012 <- final.hcris.2012 %>%
+  mutate(
     Q1 = ifelse(beds <= bed_quartiles[1] & beds > 0, 1, 0),
     Q2 = ifelse(beds > bed_quartiles[1] & beds <= bed_quartiles[2], 1, 0),
     Q3 = ifelse(beds > bed_quartiles[2] & beds <= bed_quartiles[3], 1, 0),
     Q4 = ifelse(beds > bed_quartiles[3], 1, 0)
   )
- 
 
 # Calculate average prices by quartile and penalty status
 quartile_summary <- final.hcris.2012 %>%
@@ -148,6 +155,32 @@ library(broom)
 library(sandwich)
 library(lmtest)
 
+# Combine relevant variables first, then remove missing values together
+matching_data <- final.hcris.2012 %>%
+  select(price, penalty, Q1, Q2, Q3, Q4) %>%
+  na.omit()  # Remove missing values across all columns together
+
+# Create lp.vars (price and penalty) from the cleaned dataset
+lp.vars <- matching_data %>%
+  select(price, penalty)
+
+# Create lp.covs (quartile indicators) from the same dataset
+lp.covs <- matching_data %>%
+  select(Q1, Q2, Q3, Q4) %>%
+  as.matrix()  # Match() requires a matrix for X
+
+  # Run Nearest Neighbor Matching
+m.nn.var <- Matching::Match(
+  Y = lp.vars$price,
+  Tr = lp.vars$penalty,
+  X = lp.covs,
+  M = 1,  # 1-to-1 matching
+  Weight = 1,
+  estimand = "ATE"
+)
+
+# Print the results
+summary(m.nn.var)
 
 lp.covs <- final.hcris.2012 %>%
 select(Q1, Q2, Q3, Q4) %>%
@@ -183,4 +216,3 @@ m.nn.ps <- Matching::Match(Y=lp.vars$price,
                            X=ps,
                            M=1,
                            estimand="ATE")
-final.hcris.2012 <- 
