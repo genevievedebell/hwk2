@@ -53,7 +53,7 @@ final.hcris.data <- final.hcris.data %>%
 mutate(log_price = log(price))
 # Step 3: Create a violin plot to show the distribution of estimated prices by year
 
-ggplot(final.hcris.data_clean, aes(x = as.factor(year), y = log_price)) +
+ggplot(final.hcris.data, aes(x = as.factor(year), y = log_price)) +
   geom_violin(trim = TRUE, fill = "skyblue", color = "black") +
   labs(
     title = "Distribution of Estimated Prices by Year",
@@ -108,13 +108,6 @@ final.hcris.2012 <- final.hcris.data %>%
 bed_quartiles <- quantile(final.hcris.2012$beds, probs = c(0.25, 0.50, 0.75), na.rm = TRUE)
 
 # Assign each hospital to a bed size quartile
-final.hcris.2012 <- final.hcris.2012 %>%
-  mutate(
-    Q1 = as.numeric((beds <= bed_quartiles[1]) & (beds > 0)),
-    Q2 = as.numeric((beds > bed_quartiles[1]) & (beds <= bed_quartiles[2])),
-    Q3 = as.numeric((beds > bed_quartiles[2]) & (beds <= bed_quartiles[3])),
-    Q4 = as.numeric(beds > bed_quartiles[3])
-  )
 final.hcris.2012 <- final.hcris.2012 %>%
   mutate(
     Q1 = ifelse(beds <= bed_quartiles[1] & beds > 0, 1, 0),
