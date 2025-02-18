@@ -131,12 +131,9 @@ matching_data <- final.hcris.2012 %>%
   filter(!is.na(price) & !is.na(penalty) & !is.na(Q1) & !is.na(Q2) & !is.na(Q3) & !is.na(Q4))
 
 # Create variables
-lp.vars <- matching_data %>%
-  select(price, penalty)
+lp.vars <- final.hcris.2012 %>% dplyr::select(Q1, Q2, Q3, Q4, penalty, price) %>% filter(complete.cases(.))
 
-lp.covs <- matching_data %>%
-  select(Q1, Q2, Q3, Q4) %>%
-  as.matrix()
+lp.covs <- lp.vars %>% dplyr::select(penalty,price)
 
 # Diagnostic checks
 cat("Rows in lp.vars:", nrow(lp.vars), "\n")
