@@ -1,8 +1,7 @@
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(tidyverse, ggplot2, dplyr, lubridate)
 
-# 1)How many hospitals filed more than one report in the same year? 
-## Show your answer as a line graph of the number of hospitals over time. 
+# 1)How many hospitals filed more than one report in the same year? Show your answer as a line graph of the number of hospitals over time. 
 multi_report_counts <- duplicate.hcris %>%
 group_by(fyear) %>%
 summarise(num_hospitals = n_distinct(provider_number))
@@ -20,14 +19,12 @@ caption = "Source: HCRIS Data (1996 & 2010 Versions)"
 theme_minimal()
 
 
-# 2)Count the number of unique hospital IDs
+# 2) After removing/combining multiple reports, how many unique hospital IDs (Medicare provider numbers) exist in the data?
 unique_hospital_count <- final.hcris.data %>%
-distinct(provider_number) %>%
-nrow()
-
+  distinct(provider_number) %>%
+  nrow()
 ## Print the result
 cat("Number of unique hospital IDs (Medicare provider numbers):", unique_hospital_count, "\n")
-
 
 # 3)What is the distribution of total charges in each year? 
 ggplot(final.hcris.data, aes(x = factor(year), y = tot_charges)) +
@@ -93,7 +90,7 @@ print(mean.pen)
 print(mean.nopen)
 
 
-# 6)Split hospitals into quartiles based on bed size. Provide a table of the average price among treated/control groups for each quartile. 
+# 6) Split hospitals into quartiles based on bed size. Provide a table of the average price among treated/control groups for each quartile. 
 ## Define penalty: HVBP + HRRP < 0
 final.hcris.2012 <- final.hcris.2012 %>%
 mutate(
@@ -107,12 +104,12 @@ bed_quartiles <- quantile(final.hcris.2012$beds, probs = c(0.25, 0.50, 0.75), na
 
 ## Assign each hospital to a bed size quartile
 final.hcris.2012 <- final.hcris.2012 %>%
-mutate(
-Q1 = ifelse(beds <= bed_quartiles[1] & beds > 0, 1, 0),
-Q2 = ifelse(beds > bed_quartiles[1] & beds <= bed_quartiles[2], 1, 0),
-Q3 = ifelse(beds > bed_quartiles[2] & beds <= bed_quartiles[3], 1, 0),
-Q4 = ifelse(beds > bed_quartiles[3], 1, 0)
-) 
+  mutate(
+    Q1 = ifelse(beds <= bed_quartiles[1], 1, 0),
+    Q2 = ifelse(beds > bed_quartiles[1] & beds <= bed_quartiles[2], 1, 0),
+    Q3 = ifelse(beds > bed_quartiles[2] & beds <= bed_quartiles[3], 1, 0),
+    Q4 = ifelse(beds > bed_quartiles[3], 1, 0)
+  )
 
 ## Calculate average prices by quartile and penalty status
 quartile_summary <- final.hcris.2012 %>%
@@ -127,79 +124,69 @@ summarise(avg_price = mean(price, na.rm = TRUE), .groups = "drop") %>%
 pivot_wider(names_from = penalty, values_from = avg_price, names_prefix = "penalty_")
 
 print(quartile_summary)
+# 7) Find the average treatment effect using each of the following estimators, and present your results in a single table:
 
+# Prepare data properly
+matching_data <- final.hcris.2012 %>%
+  filter(!is.na(price) & !is.na(penalty) & !is.na(Q1) & !is.na(Q2) & !is.na(Q3) & !is.na(Q4))
 
-# 7)Find the average treatment effect using each of the following estimators: 
-## Nearest matching neighbor with inverse variance distance based on quartiles of bed size
-install.packages("Matching")
-install.packages("MatchIt")
-install.packages("WeightIt")
+# Create variables
+lp.vars <- matching_data %>%
+  select(price, penalty)
 
-colnames(final.hcris.2012)
-
-lp.covs <- final.hcris.2012 %>%
+lp.covs <- matching_data %>%
   select(Q1, Q2, Q3, Q4) %>%
-  na.omit()
+  as.matrix()
 
-lp.vars <- final.hcris.2012 %>%
-  select(price, penalty) %>%
-  na.omit()
+# Diagnostic checks
+cat("Rows in lp.vars:", nrow(lp.vars), "\n")
+cat("Rows in lp.covs:", nrow(lp.covs), "\n")
+print(cor(lp.covs))
 
-m.nn.var <- Matching::Match(Y=lp.vars$price,
-                            Tr=lp.vars$penalty,
-                            X=lp.covs,
-                            M=1, 
-                            Weight=1,
-                            estimand="ATE")
-
+# 1️⃣ Nearest Neighbor Matching (Inverse Variance)
+m.nn.var <- Matching::Match(
+  Y = lp.vars$price,
+  Tr = lp.vars$penalty,
+  X = lp.covs,
+  M = 1,
+  Weight = 1,
+  estimand = "ATE"
+)
 summary(m.nn.var)
-v.name=data.frame(new=c("Q1", "Q2", "Q3", "Q4"))
 
-### plot
-install.packages("cobalt")
-library(cobalt)
+# 2️⃣ Nearest Neighbor Matching (Mahalanobis)
+m.nn.md <- Matching::Match(
+  Y = lp.vars$price,
+  Tr = lp.vars$penalty,
+  X = lp.covs,
+  M = 1,
+  Weight = 2,
+  estimand = "ATE"
+)
+summary(m.nn.md)
 
-
-love.plot(bal.tab(m.nn.var, covs = lp.covs, treat = lp.vars$penalty), 
-          threshold=0.1, 
-          var.names=v.name,
-          grid=FALSE, sample.names=c("Unmatched", "Matched"),
-          position="top", shapes=c("circle","triangle"),
-          colors=c("black","blue")) + 
-  theme_bw()
-
-## Nearest neighbor matching with Mahalanobis distance based on quartiles of bed size
-m.nn.md <- Matching::Match(Y=lp.vars$price,
-                           Tr=lp.vars$penalty,
-                           X=lp.covs,
-                           M=1,
-                           Weight=2,
-                           estimand="ATE")
-
-## Inverse propensity weighting, where the propensity scores are based on quartiles of bed size
-logit.model <- glm(penalty ~ Q1 + Q2 + Q3, family=binomial, data=final.hcris.2012)
+# 3️⃣ Inverse Propensity Weighting
+logit.model <- glm(penalty ~ poly(Q1, 2) + poly(Q2, 2) + poly(Q3, 2) + poly(Q4, 2) + 
+                             Q1:penalty + Q2:penalty + Q3:penalty + Q4:penalty,
+                   family = binomial, data = final.hcris.2012)
 ps <- fitted(logit.model)
 
-m.nn.ps <- Matching::Match(Y=lp.vars$price,
-                           Tr=lp.vars$penalty,
-                           X=ps,
-                           M=1,
-                           estimand="ATE")
+m.nn.ps <- Matching::Match(
+  Y = lp.vars$price,
+  Tr = lp.vars$penalty,
+  X = ps,
+  M = 1,
+  estimand = "ATE"
+)
 summary(m.nn.ps)
 
-## Simple linear regression, adjusting for quartiles of bed size using dummy variables and appropriate interactions as discussed in class 
-ggplot(lp.vars, aes(x=ps)) + geom_histogram() + 
-  facet_wrap(~ penalty, ncol=1) +
-  theme_bw()
-
-# Simple linear regression with quartile interactions
+# 4️⃣ Simple Linear Regression
 linreg.model <- lm(price ~ penalty * (Q1 + Q2 + Q3 + Q4), data = final.hcris.2012)
-
-# Print the results
 summary(linreg.model)
-# Extract ATE from linear regression
-linreg.ate <- coef(linreg.model)["penaltyTRUE"]
-linreg.se <- coef(summary(linreg.model))["penaltyTRUE", "Std. Error"]
+
+# Extract ATE and SE
+linreg.ate <- coef(linreg.model)[grep("penalty", names(coef(linreg.model)))[1]]
+linreg.se <- coef(summary(linreg.model))[grep("penalty", rownames(coef(summary(linreg.model))))[1], "Std. Error"]
 
 # Collect results
 nn_invvar_ate <- summary(m.nn.var)$est
@@ -211,7 +198,7 @@ nn_md_se <- summary(m.nn.md)$se
 ipw_ate <- summary(m.nn.ps)$est
 ipw_se <- summary(m.nn.ps)$se
 
-# Create summary table
+# 📊 Final summary table
 results_table <- tibble(
   Estimator = c("NN Matching (Inverse Variance)", 
                 "NN Matching (Mahalanobis)", 
@@ -221,5 +208,6 @@ results_table <- tibble(
   SE = c(nn_invvar_se, nn_md_se, ipw_se, linreg.se)
 )
 
-# Print the table
+# Print the results
 print(results_table)
+
