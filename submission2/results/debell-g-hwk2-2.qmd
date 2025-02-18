@@ -1,0 +1,12 @@
+---
+title: "Homework 1"
+subtitle: "Research Methods, Spring 2025"
+author: "Genevieve DeBell"
+format:
+  pdf:
+    output-file: "debell-g-hwk2-1"
+    output-ext:  "pdf"
+    header-includes:
+      - \usepackage{float}
+      - \floatplacement{table}{H}
+      

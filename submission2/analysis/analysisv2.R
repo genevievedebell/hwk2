@@ -124,6 +124,7 @@ summarise(avg_price = mean(price, na.rm = TRUE), .groups = "drop") %>%
 pivot_wider(names_from = penalty, values_from = avg_price, names_prefix = "penalty_")
 
 print(quartile_summary)
+
 # 7) Find the average treatment effect using each of the following estimators, and present your results in a single table:
 
 # Prepare data properly
@@ -140,7 +141,7 @@ cat("Rows in lp.vars:", nrow(lp.vars), "\n")
 cat("Rows in lp.covs:", nrow(lp.covs), "\n")
 print(cor(lp.covs))
 
-# 1️⃣ Nearest Neighbor Matching (Inverse Variance)
+# Nearest Neighbor Matching (Inverse Variance)
 m.nn.var <- Matching::Match(
   Y = lp.vars$price,
   Tr = lp.vars$penalty,
@@ -162,10 +163,8 @@ m.nn.md <- Matching::Match(
 )
 summary(m.nn.md)
 
-# 3️⃣ Inverse Propensity Weighting
-logit.model <- glm(penalty ~ poly(Q1, 2) + poly(Q2, 2) + poly(Q3, 2) + poly(Q4, 2) + 
-                             Q1:penalty + Q2:penalty + Q3:penalty + Q4:penalty,
-                   family = binomial, data = final.hcris.2012)
+# Inverse Propensity Weighting
+logit.model <- glm(penalty ~ Q1 + Q2 + Q3 + Q4, family=binomial, data=lp.vars)
 ps <- fitted(logit.model)
 
 m.nn.ps <- Matching::Match(
@@ -177,8 +176,8 @@ m.nn.ps <- Matching::Match(
 )
 summary(m.nn.ps)
 
-# 4️⃣ Simple Linear Regression
-linreg.model <- lm(price ~ penalty * (Q1 + Q2 + Q3 + Q4), data = final.hcris.2012)
+# Simple Linear Regression
+linreg.model <- lm(price ~ penalty * (Q1 + Q2 + Q3), data = lp.vars)
 summary(linreg.model)
 
 # Extract ATE and SE
@@ -195,7 +194,7 @@ nn_md_se <- summary(m.nn.md)$se
 ipw_ate <- summary(m.nn.ps)$est
 ipw_se <- summary(m.nn.ps)$se
 
-# 📊 Final summary table
+# Final summary table
 results_table <- tibble(
   Estimator = c("NN Matching (Inverse Variance)", 
                 "NN Matching (Mahalanobis)", 
@@ -207,4 +206,3 @@ results_table <- tibble(
 
 # Print the results
 print(results_table)
-
