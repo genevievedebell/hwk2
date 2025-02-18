@@ -110,10 +110,10 @@ bed_quartiles <- quantile(final.hcris.2012$beds, probs = c(0.25, 0.50, 0.75), na
 # Assign each hospital to a bed size quartile
 final.hcris.2012 <- final.hcris.2012 %>%
   mutate(
-    Q1 = ifelse(beds <= bed_quartiles[1] & beds > 0, 1, 0),
-    Q2 = ifelse(beds > bed_quartiles[1] & beds <= bed_quartiles[2], 1, 0),
-    Q3 = ifelse(beds > bed_quartiles[2] & beds <= bed_quartiles[3], 1, 0),
-    Q4 = ifelse(beds > bed_quartiles[3], 1, 0)
+    Q1 = as.numeric((beds <= bed_quartiles[1]) & (beds > 0)),
+    Q2 = as.numeric((beds > bed_quartiles[1]) & (beds <= bed_quartiles[2])),
+    Q3 = as.numeric((beds > bed_quartiles[2]) & (beds <= bed_quartiles[3])),
+    Q4 = as.numeric(beds > bed_quartiles[3])
   )
 
 # Calculate average prices by quartile and penalty status
@@ -148,19 +148,43 @@ library(broom)
 library(sandwich)
 library(lmtest)
 
+
+## Nearest matching neighbor with inverse variance distance based on quartiles of bed size
+install.packages("Matching")
+install.packages("MatchIt")
+install.packages("WeightIt")
+
+colnames(final.hcris.2012)
+
+lp.covs <- final.hcris.2012 %>%
+  select(Q1, Q2, Q3, Q4) %>%
+  na.omit()
+
+lp.vars <- final.hcris.2012 %>%
+  select(price, penalty) %>%
+  na.omit()
+
+m.nn.var <- Matching::Match(Y=lp.vars$price,
+                            Tr=lp.vars$penalty,
+                            X=lp.covs,
+                            M=1, 
+                            Weight=1,
+                            estimand="ATE")
+
 # Combine relevant variables first, then remove missing values together
 matching_data <- final.hcris.2012 %>%
   select(price, penalty, Q1, Q2, Q3, Q4) %>%
+  mutate(across(c(Q1, Q2, Q3, Q4), as.numeric)) %>% # Ensure numeric covariates
   na.omit()  # Remove missing values across all columns together
 
-# Create lp.vars (price and penalty) from the cleaned dataset
+# Create lp.vars and lp.covs from the same dataset
 lp.vars <- matching_data %>%
-  select(price, penalty)
+  select(price, penalty) %>%
+  na.omit()
 
-# Create lp.covs (quartile indicators) from the same dataset
 lp.covs <- matching_data %>%
   select(Q1, Q2, Q3, Q4) %>%
-  as.matrix()  # Match() requires a matrix for X
+  na.omit()
 
   # Run Nearest Neighbor Matching
 m.nn.var <- Matching::Match(
@@ -169,7 +193,8 @@ m.nn.var <- Matching::Match(
   X = lp.covs,
   M = 1,  # 1-to-1 matching
   Weight = 1,
-  estimand = "ATE"
+  estimand = "ATE",
+  version = "fast"
 )
 
 # Print the results
