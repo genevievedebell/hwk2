@@ -8,8 +8,8 @@
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(tidyverse, ggplot2, dplyr, lubridate)
 # Read and combine data ---------------------------------------------------
-source('hwk2/submission3/data-code/H1_HCRISv1996.R')
-source('hwk2/submission3/data-code/H2_HCRISv2010.R')
+source('submission3/data-code/H1_HCRISv1996.R')
+source('submission3/data-code/H2_HCRISv2010.R')
 
 final.hcris.v1996=read_rds('data/output/HCRIS_Data_v1996.rds')
 final.hcris.v2010=read_rds('data/output/HCRIS_Data_v2010.rds')
@@ -140,3 +140,4 @@ final.hcris.data =
   arrange(provider_number, year)
 
 write_rds(final.hcris.data,'data/output/HCRIS_Data.rds')
+

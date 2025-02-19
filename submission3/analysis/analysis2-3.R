@@ -34,11 +34,24 @@ print(fig.unique)
 
 # 3)What is the distribution of total charges in each year? 
 # Remove top 1% and bottom 1% of total charges
-final.hcris.data <- final.hcris.data %>%
+colnames(final.hcris.data)
+# Filter out outliers using quantile-based thresholds
+final.hcris.data<- final.hcris.data %>%
+  group_by(year) %>%
+  mutate(
+    tot_charges_low = quantile(tot_charges, probs = 0.05, na.rm = TRUE),
+    tot_charges_high = quantile(tot_charges, probs = 0.95, na.rm = TRUE)
+  ) %>%
+  ungroup() %>%  # Ungroup to avoid issues with mutate()
   filter(
-    tot_charges > quantile(tot_charges, 0.01, na.rm = TRUE) & 
-    tot_charges < quantile(tot_charges, 0.99, na.rm = TRUE)
-  )
+    tot_charges > tot_charges_low,
+    tot_charges < tot_charges_high,
+    !is.na(tot_charges),
+    year > 1997
+  ) %>%
+  mutate(log_charge = log(tot_charges))
+
+
 ggplot(final.hcris.data, aes(x = factor(year), y = tot_charges)) +
 geom_violin(fill = "lightblue", color = "darkblue", alpha = 0.6) +
 scale_y_log10() + # Apply log scale to handle skewed distributions
@@ -49,8 +62,6 @@ y = "Total Charges (log scale)",
 caption = "Source: HCRIS Data (1996 & 2010 Versions)"
 ) +
 theme_minimal()
-
-# clean extremes 
 
 # 4)What is the distribution of estimated prices in each year?
 ## Step 1: Calculate discount factor
@@ -68,14 +79,13 @@ final.hcris.data <- final.hcris.data %>%
 
 ## Step 3: Create a violin plot to show the distribution of estimated prices by year
 final.hcris.data <- final.hcris.data %>%
-  mutate(log_price = log(price))
 
-ggplot(final.hcris.data, aes(x = as.factor(year), y = log_price)) +
+ggplot(final.hcris.data, aes(x = as.factor(year), y = price)) +
   geom_violin(trim = TRUE, fill = "skyblue", color = "black") +
   labs(
     title = "Distribution of Estimated Prices by Year",
     x = "Year",
-    y = "Log of Estimated Price"
+    y = "Price"
   ) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
