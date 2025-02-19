@@ -18,15 +18,27 @@ caption = "Source: HCRIS Data (1996 & 2010 Versions)"
 ) +
 theme_minimal()
 
-
 # 2) After removing/combining multiple reports, how many unique hospital IDs (Medicare provider numbers) exist in the data?
-unique_hospital_count <- final.hcris.data %>%
-  distinct(provider_number) %>%
-  nrow()
-## Print the result
-cat("Number of unique hospital IDs (Medicare provider numbers):", unique_hospital_count, "\n")
+fig.unique <- final.hcris.data %>% group_by(year) %>%
+  summarize(unique_hospital_count=n()) %>%
+  ggplot(aes(x=as.factor(year), y=unique_hospital_count, group=1)) +
+  geom_line() +
+  labs(
+    x="Year",
+    y="Number of Hospitals",
+    title=""
+  ) + theme_bw() +
+  scale_y_continuous(labels=scales::comma,limits=c(0,6500)) +
+  theme(axis.text.x = element_text(angle=70, hjust=1))
+print(fig.unique)
 
 # 3)What is the distribution of total charges in each year? 
+# Remove top 1% and bottom 1% of total charges
+final.hcris.data <- final.hcris.data %>%
+  filter(
+    tot_charges > quantile(tot_charges, 0.01, na.rm = TRUE) & 
+    tot_charges < quantile(tot_charges, 0.99, na.rm = TRUE)
+  )
 ggplot(final.hcris.data, aes(x = factor(year), y = tot_charges)) +
 geom_violin(fill = "lightblue", color = "darkblue", alpha = 0.6) +
 scale_y_log10() + # Apply log scale to handle skewed distributions
@@ -38,6 +50,7 @@ caption = "Source: HCRIS Data (1996 & 2010 Versions)"
 ) +
 theme_minimal()
 
+# clean extremes 
 
 # 4)What is the distribution of estimated prices in each year?
 ## Step 1: Calculate discount factor
@@ -62,7 +75,7 @@ ggplot(final.hcris.data, aes(x = as.factor(year), y = log_price)) +
   labs(
     title = "Distribution of Estimated Prices by Year",
     x = "Year",
-    y = "Estimated Price"
+    y = "Log of Estimated Price"
   ) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
@@ -102,6 +115,7 @@ penalty = (hvbp_payment + hrrp_payment) < 0
 ## Calculate bed size quartiles
 bed_quartiles <- quantile(final.hcris.2012$beds, probs = c(0.25, 0.50, 0.75), na.rm = TRUE)
 
+# restrict bed size 
 ## Assign each hospital to a bed size quartile
 final.hcris.2012 <- final.hcris.2012 %>%
   mutate(
@@ -127,9 +141,7 @@ print(quartile_summary)
 
 # 7) Find the average treatment effect using each of the following estimators, and present your results in a single table:
 
-# Prepare data properly
-matching_data <- final.hcris.2012 %>%
-  filter(!is.na(price) & !is.na(penalty) & !is.na(Q1) & !is.na(Q2) & !is.na(Q3) & !is.na(Q4))
+# Prepare data properly matching_data <- final.hcris.2012 %>% filter(!is.na(price) & !is.na(penalty) & !is.na(Q1) & !is.na(Q2) & !is.na(Q3) & !is.na(Q4))
 
 # Create variables
 lp.vars <- final.hcris.2012 %>% dplyr::select(Q1, Q2, Q3, Q4, penalty, price) %>% filter(complete.cases(.))
@@ -142,58 +154,71 @@ cat("Rows in lp.covs:", nrow(lp.covs), "\n")
 print(cor(lp.covs))
 
 # Nearest Neighbor Matching (Inverse Variance)
-m.nn.var <- Matching::Match(
-  Y = lp.vars$price,
-  Tr = lp.vars$penalty,
-  X = lp.covs,
-  M = 1,
-  Weight = 1,
-  estimand = "ATE"
-)
-summary(m.nn.var)
+near.match <- Matching::Match(
+  Y = final.hcris.2012$price,
+  Tr = final.hcris.2012$penalty,
+  X = final.hcris.2012 %>% select(Q1, Q2, Q3),
+  M = 1, # for single nearest neighbor
+  Weight = 1, # scaled euclidean distance 
+  estimand = "ATE")
+summary(near.match)
 
 # Nearest Neighbor Matching (Mahalanobis)
-m.nn.md <- Matching::Match(
-  Y = lp.vars$price,
-  Tr = lp.vars$penalty,
-  X = lp.covs,
-  M = 1,
-  Weight = 2,
-  estimand = "ATE"
-)
-summary(m.nn.md)
+maha.match <- Matching::Match(
+  Y = final.hcris.2012$price,
+  Tr = final.hcris.2012$penalty,
+  X = final.hcris.2012 %>% select(Q1, Q2, Q3),
+  M = 1, # for single nearest neighbor
+  Weight = 1, # scaled euclidean distance 
+  estimand = "ATE")
+summary(maha.match)
 
 # Inverse Propensity Weighting
-logit.model <- glm(penalty ~ Q1 + Q2 + Q3 + Q4, family=binomial, data=lp.vars)
+logit.model <- glm(penalty ~ Q1 + Q2 + Q3, family=binomial, data=final.hcris.2012)
 ps <- fitted(logit.model)
 
-m.nn.ps <- Matching::Match(
-  Y = lp.vars$price,
-  Tr = lp.vars$penalty,
-  X = ps,
-  M = 1,
-  estimand = "ATE"
-)
-summary(m.nn.ps)
+# Calculate inverse propensity weights (IPW)
+final.hcris.2012 <- final.hcris.2012 %>%
+  mutate(ipw = case_when(
+    penalty == 1 ~ 1 / ps,         # For treated group (penalty == 1)
+    penalty == 0 ~ 1 / (1 - ps),   # For control group (penalty == 0)
+    TRUE ~ NA_real_               # Handle any missing values
+  ))
+
+### Compute weighted average prices for treated (penalty == 1) and control (penalty == 0) groups
+mean.t1 <- final.hcris.2012 %>% filter(penalty == 1) %>%
+  dplyr::select(price, ipw) %>%
+  summarize(mean_p = weighted.mean(price, w = ipw))
+
+mean.t0 <- final.hcris.2012 %>% filter(penalty == 0) %>%
+  dplyr::select(price, ipw) %>%
+  summarize(mean_p = weighted.mean(price, w = ipw))
+
+ipw.diff <- mean.t1$mean_p - mean.t0$mean_p
+ipw.diff
+
+### Compute weighted average prices for treated (penalty == 1) and control (penalty == 0) groups
+mean.t1 <- m.nn.ps %>% filter(penalty == 1) %>%
+  dplyr::select(price, ipw) %>%
+  summarize(mean_p = weighted.mean(price, w = ipw, na.rm = TRUE))
+
+mean.t0 <- m.nn.ps %>% filter(penalty == 0) %>%
+  dplyr::select(price, ipw) %>%
+  summarize(mean_p = weighted.mean(price, w = ipw, na.rm = TRUE))
+m.nn.ps2 <- mean.t1$mean_p - mean.t0$mean_p
+m.nn.ps2
 
 # Simple Linear Regression
-linreg.model <- lm(price ~ penalty * (Q1 + Q2 + Q3), data = lp.vars)
-summary(linreg.model)
+reg.dat <- final.hcris.2012 %>% ungroup() %>% filter(complete.cases(.)) %>%
+  mutate(Q1_diff = penalty * (Q1 - mean(Q1)),
+         Q2_diff = penalty * (Q2 - mean(Q2)),
+         Q3_diff = penalty * (Q3 - mean(Q3)),
+         Q4_diff = penalty * (Q4 - mean(Q4)))
+reg <- lm(price ~ penalty + Q1 + Q2 + Q3 + 
+            Q1_diff + Q2_diff + Q3_diff,
+          data = reg.dat)
+summary(reg)
 
-
-ate_results <- data.frame(
-  Estimator = c("Nearest Neighbor (Inverse Variance)", 
-                "Nearest Neighbor (Mahalanobis)", 
-                "Inverse Propensity Weighting", 
-                "Linear Regression"),
-  ATE = c(
-    m.nn.var$est,  # ATE from nearest neighbor matching with inverse variance
-    m.nn.md$est,   # ATE from nearest neighbor matching with Mahalanobis distance
-    m.nn.ps,  # ATE from inverse propensity weighting
-    linreg.model  # ATE from linear regression (penalty effect)
-  )
-)
-print(ate_results)
 # Extract ATE and SE
 linreg.ate <- coef(linreg.model)[grep("penalty", names(coef(linreg.model)))[1]]
 linreg.se <- coef(summary(linreg.model))[grep("penalty", rownames(coef(summary(linreg.model))))[1], "Std. Error"]
