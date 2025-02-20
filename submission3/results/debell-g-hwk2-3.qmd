@@ -72,4 +72,214 @@ fig.unique <- final.hcris.data %>% group_by(year) %>%
 print(fig.unique)
 ```
 
+# 3. What is the distribution of total charges (tot_charges in the data) in each year?
+```{r}
+#| echo: false
+charge.data <- final.hcris.data %>% 
+  group_by(year) %>% 
+  mutate(tot_charges_low=quantile(tot_charges, probs=0.01, na.rm=TRUE), 
+         tot_charges_high=quantile(tot_charges, probs=0.99, na.rm=TRUE)) %>%
+  filter(tot_charges<tot_charges_high, tot_charges>tot_charges_low, 
+        !is.na(tot_charges), year>1997) %>% 
+  mutate(log_charge=log(tot_charges))
+
+ggplot(charge.data, aes(x = factor(year), y = tot_charges)) +
+geom_violin(fill = "lightblue", color = "darkblue", alpha = 0.6) +
+scale_y_log10() + # Apply log scale to handle skewed distributions
+labs(
+title = "Distribution of Total Charges by Year",
+x = "Year",
+y = "Total Charges (log scale)",
+caption = "Source: HCRIS Data (1996 & 2010 Versions)"
+) +
+theme_minimal()
+```
+
+# 4. What is the distribution of estimated prices in each year?
+```{r}
+#| echo: false
+price.data <- final.hcris.data %>%
+  mutate(discount_factor=1 - tot_discounts / tot_charges,
+    price_num = (ip_charges + icu_charges + ancillary_charges)*discount_factor - tot_mcare_payment,
+    price_denom=tot_discharges - mcare_discharges,
+    price=price_num/price_denom) %>% 
+  filter(price_denom>100, !is.na(price_denom), 
+    price_num>0, !is.na(price_num), 
+    price<100000, 
+    beds>30, !is.na(beds))
+
+## Create a violin plot to show the distribution of estimated prices by year
+ggplot(price.data, aes(x = as.factor(year), y = price)) +
+  geom_violin(trim = TRUE, fill = "skyblue", color = "black") +
+  labs(
+    title = "Distribution of Estimated Prices by Year",
+    x = "Year",
+    y = "Price"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  ```
+
+# 5. Calculate the average price among penalized versus non-penalized hospitals, only including observations from 2012. 
+```{r}
+#| echo: false
+price.data <- price.data %>%
+  mutate( discount_factor = 1-tot_discounts/tot_charges,
+          price_num = (ip_charges + icu_charges + ancillary_charges)*discount_factor - tot_mcare_payment,
+          price_denom = tot_discharges - mcare_discharges,
+          price = price_num/price_denom)
+
+final.hcris.2012 <- price.data %>% ungroup() %>%
+  filter(price_denom>100, !is.na(price_denom), 
+         price_num>0, !is.na(price_num),
+         price<100000, 
+         beds>30, year==2012) %>%  #<<
+  mutate( hvbp_payment = ifelse(is.na(hvbp_payment),0,hvbp_payment),
+          hrrp_payment = ifelse(is.na(hrrp_payment),0,abs(hrrp_payment)), #<<
+    penalty = (hvbp_payment-hrrp_payment<0)) #<<
+
+mean.pen <- round(mean(final.hcris.2012$price[which(final.hcris.2012$penalty==1)]),2)
+mean.nopen <- round(mean(final.hcris.2012$price[which(final.hcris.2012$penalty==0)]),2)
+cat("Average price among non-penalized hospitals:", mean.nopen, "\n")
+cat("Average price among penalized hospitals:", mean.pen, "\n")
+```
+
+# 6. Split hospitals into quartiles based on bed size. To do this, create 4 new indicator variables, where each variable is set to 1 if the hospital’s bed size falls into the relevant quartile. Provide a table of the average price among treated/control groups for each quartile.
+```{r}
+#| echo: false
+final.hcris.2012 <- final.hcris.2012 %>%
+mutate(
+hvbp_payment = ifelse(is.na(hvbp_payment), 0, hvbp_payment),
+hrrp_payment = ifelse(is.na(hrrp_payment), 0, hrrp_payment),
+penalty = (hvbp_payment + hrrp_payment) < 0
+)
+
+## Calculate bed size quartiles
+bed_quartiles <- quantile(final.hcris.2012$beds, probs = c(0.25, 0.50, 0.75), na.rm = TRUE)
+
+## Clean by bed size and price 
+bed_lower <- quantile(final.hcris.2012$beds, 0.05, na.rm = TRUE)
+bed_upper <- quantile(final.hcris.2012$beds, 0.95, na.rm = TRUE) 
+price_cutoffs <- quantile(final.hcris.2012$price, probs = c(0.05, 0.95), na.rm = TRUE)
+
+final.hcris.2012 <- final.hcris.2012 %>%
+filter(beds > bed_lower & beds < bed_upper) %>%
+filter(price >= price_cutoffs[1] & price <= price_cutoffs[2]) %>%
+mutate(
+Q1 = ifelse(beds <= bed_quartiles[1] & beds > 0, 1, 0),
+Q2 = ifelse(beds > bed_quartiles[1] & beds <= bed_quartiles[2], 1, 0),
+Q3 = ifelse(beds > bed_quartiles[2] & beds <= bed_quartiles[3], 1, 0),
+Q4 = ifelse(beds > bed_quartiles[3], 1, 0)
+) 
+
+## Calculate average prices by quartile and penalty status
+quartile_summary <- final.hcris.2012 %>%
+mutate(bed_quartile = case_when(
+Q1 == 1 ~ "Q1",
+Q2 == 1 ~ "Q2",
+Q3 == 1 ~ "Q3",
+Q4 == 1 ~ "Q4"
+)) %>%
+group_by(bed_quartile, penalty) %>%
+summarise(avg_price = mean(price, na.rm = TRUE), .groups = "drop") %>%
+pivot_wider(names_from = penalty, values_from = avg_price, names_prefix = "penalty_")
+quartile_summary <- quartile_summary %>%
+  rename(
+    `No Penalty` = `penalty_FALSE`, 
+    `Penalty` = `penalty_TRUE`)
+print(quartile_summary)
+```
+
+# 7. Find the average treatment effect using each of the following estimators, and present your results in a single table: Nearest neighbor matching (1-to-1) with inverse variance distance based on quartiles of bed size, nearest neighbor matching (1-to-1) with Mahalanobis distance based on quartiles of bed size, inverse propensity weighting, where the propensity scores are based on quartiles of bed size, simple linear regression, adjusting for quartiles of bed size using dummy variables and appropriate interactions as discussed in class.
+```{r}
+#| echo: false
+install.packages("Matching")
+install.packages("MatchIt")
+install.packages("WeightIt")
+install.packages("cobalt")
+library(Matching)
+library(cobalt)
+library(dplyr)
+
+final.hcris.2012 <- final.hcris.2012 %>%
+  mutate(penalty = as.numeric(penalty))
+
+## Nearest neighbor matching with inverse vairance distance based on quartiles of bed size
+
+near.match <- Matching::Match(Y=final.hcris.2012$price,
+                            Tr=final.hcris.2012$penalty,
+                            X=(final.hcris.2012 %>% dplyr::select(Q1, Q2, Q3)),
+                            M=1, 
+                            Weight=1,
+                            estimand="ATE",
+                            ties=FALSE)
+summary(near.match)
+
+## Nearest Neighbor Matching (Mahalanobis)
+mal.match <- Matching::Match(Y=final.hcris.2012$price,
+                            Tr=final.hcris.2012$penalty,
+                            X=(final.hcris.2012 %>% dplyr::select(Q1, Q2, Q3)),
+                            M=1, 
+                            Weight=2,
+                            estimand="ATE",
+                            ties=FALSE)
+summary(mal.match)
+
+### Calculate inverse propensity weights (IPW)
+final.hcris.2012 <- final.hcris.2012 %>%
+  mutate(ipw = case_when(
+    penalty == 1 ~ 1 / ps,         # For treated group (penalty == 1)
+    penalty == 0 ~ 1 / (1 - ps),   # For control group (penalty == 0)
+    TRUE ~ NA_real_               # Handle any missing values
+  ))
+
+### Compute weighted average prices for treated (penalty == 1) and control (penalty == 0) groups
+mean.t1 <- final.hcris.2012 %>% filter(penalty == 1) %>%
+  dplyr::select(price, ipw) %>%
+  summarize(mean_p = weighted.mean(price, w = ipw))
+
+mean.t0 <- final.hcris.2012 %>% filter(penalty == 0) %>%
+  dplyr::select(price, ipw) %>%
+  summarize(mean_p = weighted.mean(price, w = ipw))
+
+ipw.diff <- mean.t1$mean_p - mean.t0$mean_p
+ipw.diff
+
+## Simple Linear Regression
+reg.data <- final.hcris.2012 %>% ungroup() %>%
+  mutate(Q1_diff = penalty * (Q1 - mean(Q1)),
+         Q2_diff = penalty * (Q2 - mean(Q2)),
+         Q3_diff = penalty * (Q3 - mean(Q3)))
+
+### Fit the regression model with quartile differences and penalty
+reg <- lm(price ~ penalty + Q1 + Q2 + Q3 + 
+            Q1_diff + Q2_diff + Q3_diff,
+          data = reg.data)
+summary(reg)
+
+ate <- coef(reg)["penalty"]
+ate
+
+# Extract ATE estimates
+ate_near_match <- near.match$est
+ate_mal_match <- mal.match$est
+ate_ipw_diff <- ipw.diff
+ate_regression <- ate
+
+# Create a data frame summarizing the results
+ate_estimates <- data.frame(
+  Method = c(
+    "Nearest Matching (Inverse Variance)",
+    "Nearest Matching (Mahalanobis Distance)",
+    "Inverse Propensity Weighting (IPW)",
+    "Linear Regression"
+  ),
+  ATE_Estimate = c(ate_near_match, ate_mal_match, ate_ipw_diff, ate_regression)
+)
+
+# Print the table using knitr::kable()
+knitr::kable(ate_estimates, 
+             caption = "ATE Estimates from Different Methods", 
+             col.names = c("Method", "ATE Estimate"))
+```
 

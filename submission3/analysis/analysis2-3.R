@@ -94,8 +94,8 @@ final.hcris.2012 <- price.data %>% ungroup() %>%
 
 mean.pen <- round(mean(final.hcris.2012$price[which(final.hcris.2012$penalty==1)]),2)
 mean.nopen <- round(mean(final.hcris.2012$price[which(final.hcris.2012$penalty==0)]),2)
-print(mean.pen)
-print(mean.nopen)
+cat("Average price among non-penalized hospitals:", mean.nopen, "\n")
+cat("Average price among penalized hospitals:", mean.pen, "\n")
 
 # 6) Split hospitals into quartiles based on bed size. Provide a table of the average price among treated/control groups for each quartile. 
 ## Define penalty: HVBP + HRRP < 0
@@ -150,6 +150,9 @@ library(Matching)
 library(cobalt)
 library(dplyr)
 
+final.hcris.2012 <- final.hcris.2012 %>%
+  mutate(penalty = as.numeric(penalty))
+
 ## Nearest neighbor matching with inverse vairance distance based on quartiles of bed size
 
 near.match <- Matching::Match(Y=final.hcris.2012$price,
@@ -157,7 +160,8 @@ near.match <- Matching::Match(Y=final.hcris.2012$price,
                             X=(final.hcris.2012 %>% dplyr::select(Q1, Q2, Q3)),
                             M=1, 
                             Weight=1,
-                            estimand="ATE")
+                            estimand="ATE",
+                            ties=FALSE)
 summary(near.match)
 
 ## Nearest Neighbor Matching (Mahalanobis)
@@ -166,12 +170,9 @@ mal.match <- Matching::Match(Y=final.hcris.2012$price,
                             X=(final.hcris.2012 %>% dplyr::select(Q1, Q2, Q3)),
                             M=1, 
                             Weight=2,
-                            estimand="ATE")
+                            estimand="ATE",
+                            ties=FALSE)
 summary(mal.match)
-
-## Inverse Propensity Weighting
-logit.model <- glm(penalty ~ Q1 + Q2 + Q3, family=binomial, data=final.hcris.2012)
-ps <- fitted(logit.model)
 
 ### Calculate inverse propensity weights (IPW)
 final.hcris.2012 <- final.hcris.2012 %>%
@@ -205,53 +206,32 @@ reg <- lm(price ~ penalty + Q1 + Q2 + Q3 +
           data = reg.data)
 summary(reg)
 
-ate <- coef(reg)["penaltyTRUE"]
+ate <- coef(reg)["penalty"]
 ate
 
-rm(list=c("final.hcris.2012", "final.hcris.data", "duplicate.hcris", "bed_quartiles", "bed_lower", "bed_upper", "price_cutoffs", "logit.model", "ps"))
-# Extract ATE and SE
-linreg.ate <- coef(linreg.model)[grep("penalty", names(coef(linreg.model)))[1]]
-linreg.se <- coef(summary(linreg.model))[grep("penalty", rownames(coef(summary(linreg.model))))[1], "Std. Error"]
+# Extract ATE estimates
+ate_near_match <- near.match$est
+ate_mal_match <- mal.match$est
+ate_ipw_diff <- ipw.diff
+ate_regression <- ate
 
-# Collect results
-nn_invvar_ate <- summary(m.nn.var)$est
-nn_invvar_se <- summary(m.nn.var)$se
-
-nn_md_ate <- summary(m.nn.md)$est
-nn_md_se <- summary(m.nn.md)$se
-
-ipw_ate <- summary(m.nn.ps)$est
-ipw_se <- summary(m.nn.ps)$se
-
-# Final summary table
-results_table <- tibble(
-  Estimator = c("NN Matching (Inverse Variance)", 
-                "NN Matching (Mahalanobis)", 
-                "Inverse Propensity Weighting", 
-                "Simple Linear Regression"),
-  ATE = c(nn_invvar_ate, nn_md_ate, ipw_ate, linreg.ate),
-  SE = c(nn_invvar_se, nn_md_se, ipw_se, linreg.se)
+# Create a data frame summarizing the results
+ate_estimates <- data.frame(
+  Method = c(
+    "Nearest Matching (Inverse Variance)",
+    "Nearest Matching (Mahalanobis Distance)",
+    "Inverse Propensity Weighting (IPW)",
+    "Linear Regression"
+  ),
+  ATE_Estimate = c(ate_near_match, ate_mal_match, ate_ipw_diff, ate_regression)
 )
 
-# Print the results
-print(results_table)
+# Print the table using knitr::kable()
+knitr::kable(ate_estimates, 
+             caption = "ATE Estimates from Different Methods", 
+             col.names = c("Method", "ATE Estimate"))
 
-summary(final.hcris.2012$price)
-
-matched_data <- data.frame(
-  price = m.nn.var$Y,
-  penalty = m.nn.var$Tr
-)
-
-matched_data %>%
-  group_by(penalty) %>%
-  summarise(
-    mean_price = mean(price, na.rm = TRUE),
-    median_price = median(price, na.rm = TRUE),
-    sd_price = sd(price, na.rm = TRUE),
-    min_price = min(price, na.rm = TRUE),
-    max_price = max(price, na.rm = TRUE),
-    count = n()
-  )
 
 save.image("submission3/results/Hwk2_workspace.RData")
+
+
