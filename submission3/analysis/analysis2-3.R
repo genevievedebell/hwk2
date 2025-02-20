@@ -209,7 +209,6 @@ ate <- coef(reg)["penaltyTRUE"]
 ate
 
 rm(list=c("final.hcris.2012", "final.hcris.data", "duplicate.hcris", "bed_quartiles", "bed_lower", "bed_upper", "price_cutoffs", "logit.model", "ps"))
-save.image("submission3/results/Hwk2_workspace.RData")
 # Extract ATE and SE
 linreg.ate <- coef(linreg.model)[grep("penalty", names(coef(linreg.model)))[1]]
 linreg.se <- coef(summary(linreg.model))[grep("penalty", rownames(coef(summary(linreg.model))))[1], "Std. Error"]
@@ -254,3 +253,5 @@ matched_data %>%
     max_price = max(price, na.rm = TRUE),
     count = n()
   )
+
+save.image("submission3/results/Hwk2_workspace.RData")
