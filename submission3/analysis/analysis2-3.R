@@ -160,8 +160,8 @@ near.match <- Matching::Match(Y=final.hcris.2012$price,
                             X=(final.hcris.2012 %>% dplyr::select(Q1, Q2, Q3)),
                             M=1, 
                             Weight=1,
-                            estimand="ATE",
-                            ties=FALSE)
+                            estimand="ATE"
+                            )
 summary(near.match)
 
 ## Nearest Neighbor Matching (Mahalanobis)
@@ -170,17 +170,23 @@ mal.match <- Matching::Match(Y=final.hcris.2012$price,
                             X=(final.hcris.2012 %>% dplyr::select(Q1, Q2, Q3)),
                             M=1, 
                             Weight=2,
-                            estimand="ATE",
-                            ties=FALSE)
+                            estimand="ATE"
+                            )
 summary(mal.match)
 
+### Inverse propensity weighting, where the propensity scores are based on quartiles of bed size
+logit.model <- glm(penalty ~ Q1 + Q2 + Q3, family=binomial, data=final.hcris.2012)
+ps <- fitted(logit.model)
+
 ### Calculate inverse propensity weights (IPW)
+
 final.hcris.2012 <- final.hcris.2012 %>%
   mutate(ipw = case_when(
     penalty == 1 ~ 1 / ps,         # For treated group (penalty == 1)
     penalty == 0 ~ 1 / (1 - ps),   # For control group (penalty == 0)
     TRUE ~ NA_real_               # Handle any missing values
   ))
+
 
 ### Compute weighted average prices for treated (penalty == 1) and control (penalty == 0) groups
 mean.t1 <- final.hcris.2012 %>% filter(penalty == 1) %>%

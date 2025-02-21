@@ -193,14 +193,6 @@ print(quartile_summary)
 # 7. Find the average treatment effect using each of the following estimators, and present your results in a single table: Nearest neighbor matching (1-to-1) with inverse variance distance based on quartiles of bed size, nearest neighbor matching (1-to-1) with Mahalanobis distance based on quartiles of bed size, inverse propensity weighting, where the propensity scores are based on quartiles of bed size, simple linear regression, adjusting for quartiles of bed size using dummy variables and appropriate interactions as discussed in class.
 ```{r}
 #| echo: false
-install.packages("Matching")
-install.packages("MatchIt")
-install.packages("WeightIt")
-install.packages("cobalt")
-library(Matching)
-library(cobalt)
-library(dplyr)
-
 final.hcris.2012 <- final.hcris.2012 %>%
   mutate(penalty = as.numeric(penalty))
 
@@ -211,8 +203,8 @@ near.match <- Matching::Match(Y=final.hcris.2012$price,
                             X=(final.hcris.2012 %>% dplyr::select(Q1, Q2, Q3)),
                             M=1, 
                             Weight=1,
-                            estimand="ATE",
-                            ties=FALSE)
+                            estimand="ATE"
+                            )
 summary(near.match)
 
 ## Nearest Neighbor Matching (Mahalanobis)
@@ -221,17 +213,23 @@ mal.match <- Matching::Match(Y=final.hcris.2012$price,
                             X=(final.hcris.2012 %>% dplyr::select(Q1, Q2, Q3)),
                             M=1, 
                             Weight=2,
-                            estimand="ATE",
-                            ties=FALSE)
+                            estimand="ATE"
+                            )
 summary(mal.match)
 
+### Inverse propensity weighting, where the propensity scores are based on quartiles of bed size
+logit.model <- glm(penalty ~ Q1 + Q2 + Q3, family=binomial, data=final.hcris.2012)
+ps <- fitted(logit.model)
+
 ### Calculate inverse propensity weights (IPW)
+
 final.hcris.2012 <- final.hcris.2012 %>%
   mutate(ipw = case_when(
     penalty == 1 ~ 1 / ps,         # For treated group (penalty == 1)
     penalty == 0 ~ 1 / (1 - ps),   # For control group (penalty == 0)
     TRUE ~ NA_real_               # Handle any missing values
   ))
+
 
 ### Compute weighted average prices for treated (penalty == 1) and control (penalty == 0) groups
 mean.t1 <- final.hcris.2012 %>% filter(penalty == 1) %>%
@@ -281,5 +279,6 @@ ate_estimates <- data.frame(
 knitr::kable(ate_estimates, 
              caption = "ATE Estimates from Different Methods", 
              col.names = c("Method", "ATE Estimate"))
+
 ```
 
