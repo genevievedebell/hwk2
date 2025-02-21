@@ -28,8 +28,8 @@ pacman::p_load(tidyverse, ggplot2, dplyr, lubridate, readr, readxl, hrbrthemes, 
 #| include: false
 #| eval: true
  
-load("/Users/genevievedebell/Documents/GitHub/hwk2/submission3/results/Hwk2_workspace.Rdata")
-load("/Users/genevievedebell/Documents/GitHub/hwk2/submission3/results/Hwk2-2_workspace.Rdata")
+load("submission3/results/Hwk2_workspace.RData")
+load("submission3/results/Hwk2-2_workspace.RData")
 ```
 
 # 1. How many hospitals filed more than one report in the same year? Show your answer as a line graph of the number of hospitals over time.
@@ -118,7 +118,7 @@ ggplot(price.data, aes(x = as.factor(year), y = price)) +
   ) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
-  ```
+```
 
 # 5. Calculate the average price among penalized versus non-penalized hospitals, only including observations from 2012. 
 ```{r}
@@ -206,7 +206,8 @@ near.match <- Matching::Match(Y=final.hcris.2012$price,
                             estimand="ATE"
                             )
 summary(near.match)
-
+```
+```{r}
 ## Nearest Neighbor Matching (Mahalanobis)
 mal.match <- Matching::Match(Y=final.hcris.2012$price,
                             Tr=final.hcris.2012$penalty,
@@ -216,7 +217,8 @@ mal.match <- Matching::Match(Y=final.hcris.2012$price,
                             estimand="ATE"
                             )
 summary(mal.match)
-
+```
+```{r}
 ### Inverse propensity weighting, where the propensity scores are based on quartiles of bed size
 logit.model <- glm(penalty ~ Q1 + Q2 + Q3, family=binomial, data=final.hcris.2012)
 ps <- fitted(logit.model)
@@ -242,7 +244,8 @@ mean.t0 <- final.hcris.2012 %>% filter(penalty == 0) %>%
 
 ipw.diff <- mean.t1$mean_p - mean.t0$mean_p
 ipw.diff
-
+```
+```{r}
 ## Simple Linear Regression
 reg.data <- final.hcris.2012 %>% ungroup() %>%
   mutate(Q1_diff = penalty * (Q1 - mean(Q1)),
@@ -257,7 +260,8 @@ summary(reg)
 
 ate <- coef(reg)["penalty"]
 ate
-
+```
+```{r}
 # Extract ATE estimates
 ate_near_match <- near.match$est
 ate_mal_match <- mal.match$est
@@ -274,11 +278,12 @@ ate_estimates <- data.frame(
   ),
   ATE_Estimate = c(ate_near_match, ate_mal_match, ate_ipw_diff, ate_regression)
 )
+```
 
+```{r}
 # Print the table using knitr::kable()
 knitr::kable(ate_estimates, 
              caption = "ATE Estimates from Different Methods", 
              col.names = c("Method", "ATE Estimate"))
 
 ```
-

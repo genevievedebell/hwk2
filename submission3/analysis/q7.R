@@ -77,3 +77,14 @@ final.hcris.2012 %>%
     Q4_min = min(beds[Q4 == 1]),
     Q4_max = max(beds[Q4 == 1])
   )
+
+file.exists("submission3/results/Hwk2_workspace.RData")
+getwd()
+
+load("submission3/results/Hwk2_workspace.RData")
+ls()
+file.access("submission3/results/Hwk2_workspace.RData", 4)
+
+rmarkdown::render("debell-g-hwk2-3.qmd", quiet = FALSE)
+
+rmarkdown::pandoc_version()

@@ -236,8 +236,9 @@ ate_estimates <- data.frame(
 knitr::kable(ate_estimates, 
              caption = "ATE Estimates from Different Methods", 
              col.names = c("Method", "ATE Estimate"))
-
-
+install.packages("quarto")
+71
+quarto::quarto_install()
 save.image("submission3/results/Hwk2_workspace.RData")
 
 
