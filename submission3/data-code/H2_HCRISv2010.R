@@ -72,3 +72,4 @@ assign(paste("final.reports.",i,sep=""),final.reports)
   }
 }
 write_rds(final.hcris.v2010,'data/output/HCRIS_Data_v2010.rds')
+save.image("submission3/results/Hwk2-2_workspace.RData")

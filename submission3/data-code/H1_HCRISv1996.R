@@ -75,3 +75,4 @@ for (i in 2008:2011) {
 install.packages("readr")
 library(readr)
 write_rds(final.hcris.v1996,"data/output/HCRIS_Data_v1996.rds")
+save.image("submission3/results/Hwk2-2_workspace.RData")

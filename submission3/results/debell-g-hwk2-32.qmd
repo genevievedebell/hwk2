@@ -1,7 +1,42 @@
+---
+title: "Homework 1"
+subtitle: "Research Methods, Spring 2025"
+author: "Genevieve DeBell"
+format:
+  pdf:
+    output-file: "debell-g-hwk2-1"
+    output-ext:  "pdf"
+    header-includes:
+      - \usepackage{float}
+      - \floatplacement{table}{H}
+---
+
+```{r}
+#| include: false
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse, ggplot2, dplyr, lubridate, readr, readxl, hrbrthemes, fixest,
+               scales, gganimate, gapminder, gifski, png, tufte, plotly, OECD,
+               ggrepel, survey, foreign, devtools, pdftools, kableExtra, modelsummary,
+               kableExtra)
+```
+
+
+```{r}
+#| include: false
+#| eval: true
+load("submission3/results/Hwk2_workspace.RData")
+load("submission3/results/Hwk2-2_workspace.RData")
+```
+
+My answers to the homework questions are described below. The GitHub repository for this work is available [here](https://github.com/genevievedebell/hwk2). Enjoy!
+
+# 1. How many hospitals filed more than one report in the same year? Show your answer as a line graph of the number of hospitals over time.
+
+```{r}
+#| echo: false
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(tidyverse, ggplot2, dplyr, lubridate)
-
-# 1)How many hospitals filed more than one report in the same year? Show your answer as a line graph of the number of hospitals over time. 
 multi_report_counts <- duplicate.hcris %>%
 group_by(fyear) %>%
 summarise(num_hospitals = n_distinct(provider_number))
@@ -17,8 +52,11 @@ y = "Number of Hospitals",
 caption = "Source: HCRIS Data (1996 & 2010 Versions)"
 ) +
 theme_minimal()
+```
 
-# 2) After removing/combining multiple reports, how many unique hospital IDs (Medicare provider numbers) exist in the data?
+# 2. After removing/combining multiple reports, how many unique hospital IDs (Medicare provider numbers) exist in the data?
+```{r}
+#| echo: false
 fig.unique <- final.hcris.data %>% group_by(year) %>%
   summarize(unique_hospital_count=n()) %>%
   ggplot(aes(x=as.factor(year), y=unique_hospital_count, group=1)) +
@@ -31,9 +69,11 @@ fig.unique <- final.hcris.data %>% group_by(year) %>%
   scale_y_continuous(labels=scales::comma,limits=c(0,6500)) +
   theme(axis.text.x = element_text(angle=70, hjust=1))
 print(fig.unique)
+```
 
-#3)What is the distribution of total charges in each year? 
-# Filter out outliers using quantile-based thresholds
+# 3. What is the distribution of total charges (tot_charges in the data) in each year?
+```{r}
+#| echo: false
 charge.data <- final.hcris.data %>% 
   group_by(year) %>% 
   mutate(tot_charges_low=quantile(tot_charges, probs=0.01, na.rm=TRUE), 
@@ -52,9 +92,11 @@ y = "Total Charges (log scale)",
 caption = "Source: HCRIS Data (1996 & 2010 Versions)"
 ) +
 theme_minimal()
+```
 
-# 4)What is the distribution of estimated prices in each year?
-## Calculate discount factor
+# 4. What is the distribution of estimated prices in each year?
+```{r}
+#| echo: false
 price.data <- final.hcris.data %>%
   mutate(discount_factor=1 - tot_discounts / tot_charges,
     price_num = (ip_charges + icu_charges + ancillary_charges)*discount_factor - tot_mcare_payment,
@@ -75,8 +117,11 @@ ggplot(price.data, aes(x = as.factor(year), y = price)) +
   ) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
 
-# 5) Calculate the average price among penalized versus non-penalized hospitals. 
+# 5. Calculate the average price among penalized versus non-penalized hospitals, only including observations from 2012. 
+```{r}
+#| echo: false
 price.data <- price.data %>%
   mutate( discount_factor = 1-tot_discounts/tot_charges,
           price_num = (ip_charges + icu_charges + ancillary_charges)*discount_factor - tot_mcare_payment,
@@ -96,9 +141,11 @@ mean.pen <- round(mean(final.hcris.2012$price[which(final.hcris.2012$penalty==1)
 mean.nopen <- round(mean(final.hcris.2012$price[which(final.hcris.2012$penalty==0)]),2)
 cat("Average price among non-penalized hospitals:", mean.nopen, "\n")
 cat("Average price among penalized hospitals:", mean.pen, "\n")
+```
 
-# 6) Split hospitals into quartiles based on bed size. Provide a table of the average price among treated/control groups for each quartile. 
-## Define penalty: HVBP + HRRP < 0
+# 6. Split hospitals into quartiles based on bed size. To do this, create 4 new indicator variables, where each variable is set to 1 if the hospital’s bed size falls into the relevant quartile. Provide a table of the average price among treated/control groups for each quartile.
+```{r}
+#| echo: false
 final.hcris.2012 <- final.hcris.2012 %>%
 mutate(
 hvbp_payment = ifelse(is.na(hvbp_payment), 0, hvbp_payment),
@@ -140,16 +187,11 @@ quartile_summary <- quartile_summary %>%
     `No Penalty` = `penalty_FALSE`, 
     `Penalty` = `penalty_TRUE`)
 print(quartile_summary)
+```
 
-# 7) Find the average treatment effect using each of the following estimators, and present your results in a single table:
-install.packages("Matching")
-install.packages("MatchIt")
-install.packages("WeightIt")
-install.packages("cobalt")
-library(Matching)
-library(cobalt)
-library(dplyr)
-
+# 7. Find the average treatment effect using each of the following estimators, and present your results in a single table: Nearest neighbor matching (1-to-1) with inverse variance distance based on quartiles of bed size, nearest neighbor matching (1-to-1) with Mahalanobis distance based on quartiles of bed size, inverse propensity weighting, where the propensity scores are based on quartiles of bed size, simple linear regression, adjusting for quartiles of bed size using dummy variables and appropriate interactions as discussed in class.
+```{r}
+#| echo: false
 final.hcris.2012 <- final.hcris.2012 %>%
   mutate(penalty = as.numeric(penalty))
 
@@ -163,7 +205,8 @@ near.match <- Matching::Match(Y=final.hcris.2012$price,
                             estimand="ATE"
                             )
 summary(near.match)
-
+```
+```{r}
 ## Nearest Neighbor Matching (Mahalanobis)
 mal.match <- Matching::Match(Y=final.hcris.2012$price,
                             Tr=final.hcris.2012$penalty,
@@ -173,7 +216,8 @@ mal.match <- Matching::Match(Y=final.hcris.2012$price,
                             estimand="ATE"
                             )
 summary(mal.match)
-
+```
+```{r}
 ### Inverse propensity weighting, where the propensity scores are based on quartiles of bed size
 logit.model <- glm(penalty ~ Q1 + Q2 + Q3, family=binomial, data=final.hcris.2012)
 ps <- fitted(logit.model)
@@ -199,7 +243,8 @@ mean.t0 <- final.hcris.2012 %>% filter(penalty == 0) %>%
 
 ipw.diff <- mean.t1$mean_p - mean.t0$mean_p
 ipw.diff
-
+```
+```{r}
 ## Simple Linear Regression
 reg.data <- final.hcris.2012 %>% ungroup() %>%
   mutate(Q1_diff = penalty * (Q1 - mean(Q1)),
@@ -214,7 +259,8 @@ summary(reg)
 
 ate <- coef(reg)["penalty"]
 ate
-
+```
+```{r}
 # Extract ATE estimates
 ate_near_match <- near.match$est
 ate_mal_match <- mal.match$est
@@ -231,12 +277,12 @@ ate_estimates <- data.frame(
   ),
   ATE_Estimate = c(ate_near_match, ate_mal_match, ate_ipw_diff, ate_regression)
 )
+```
 
+```{r}
 # Print the table using knitr::kable()
 knitr::kable(ate_estimates, 
              caption = "ATE Estimates from Different Methods", 
              col.names = c("Method", "ATE Estimate"))
 
-save.image("submission3/results/Hwk2_workspace.RData")
-
-
+```

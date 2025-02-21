@@ -25,10 +25,11 @@ pacman::p_load(tidyverse, ggplot2, dplyr, lubridate, readr, readxl, hrbrthemes, 
 ```{r}
 #| include: false
 #| eval: true
- 
-load("submission3/results/Hwk2_workspace.RData")
-load("submission3/results/Hwk2-2_workspace.RData")
+load("/Users/genevievedebell/Documents/GitHub/hwk2/submission3/results/Hwk2_workspace.RData")
+load("/Users/genevievedebell/Documents/GitHub/hwk2/submission3/results/Hwk2-2_workspace.RData")
 ```
+
+My answers to the homework questions are described below. The GitHub repository for this work is available [here](https://github.com/genevievedebell/hwk2). Enjoy!
 
 # 1. How many hospitals filed more than one report in the same year? Show your answer as a line graph of the number of hospitals over time.
 
@@ -42,15 +43,15 @@ summarise(num_hospitals = n_distinct(provider_number))
 
 ## Plot the number of hospitals filing multiple reports by year
 ggplot(multi_report_counts, aes(x = fyear, y = num_hospitals)) +
-geom_line(color = "blue", size = 1) +
-geom_point(color = "red", size = 2) +
-labs(
-title = "Hospitals Filing Multiple Reports Per Year",
-x = "Year",
-y = "Number of Hospitals",
-caption = "Source: HCRIS Data (1996 & 2010 Versions)"
-) +
-theme_minimal()
+  geom_line(color = "blue", linewidth = 1) +  # Use linewidth instead of size
+  geom_point(color = "red", size = 2) +
+  labs(
+    title = "Hospitals Filing Multiple Reports Per Year",
+    x = "Year",
+    y = "Number of Hospitals",
+    caption = "Source: HCRIS Data (1996 & 2010 Versions)"
+  ) +
+  theme_minimal()
 ```
 
 # 2. After removing/combining multiple reports, how many unique hospital IDs (Medicare provider numbers) exist in the data?
@@ -185,7 +186,10 @@ quartile_summary <- quartile_summary %>%
   rename(
     `No Penalty` = `penalty_FALSE`, 
     `Penalty` = `penalty_TRUE`)
-print(quartile_summary)
+knitr::kable(quartile_summary, 
+             caption = "Average Prices by Quartile and Penalty Status",
+             col.names = c("Bed Quartile", "No Penalty", "Penalty"),
+             digits = 2)  # Round to 2 decimal places
 ```
 
 # 7. Find the average treatment effect using each of the following estimators, and present your results in a single table: Nearest neighbor matching (1-to-1) with inverse variance distance based on quartiles of bed size, nearest neighbor matching (1-to-1) with Mahalanobis distance based on quartiles of bed size, inverse propensity weighting, where the propensity scores are based on quartiles of bed size, simple linear regression, adjusting for quartiles of bed size using dummy variables and appropriate interactions as discussed in class.
@@ -203,9 +207,9 @@ near.match <- Matching::Match(Y=final.hcris.2012$price,
                             Weight=1,
                             estimand="ATE"
                             )
-summary(near.match)
 ```
 ```{r}
+#| echo: false
 ## Nearest Neighbor Matching (Mahalanobis)
 mal.match <- Matching::Match(Y=final.hcris.2012$price,
                             Tr=final.hcris.2012$penalty,
@@ -214,9 +218,9 @@ mal.match <- Matching::Match(Y=final.hcris.2012$price,
                             Weight=2,
                             estimand="ATE"
                             )
-summary(mal.match)
 ```
 ```{r}
+#| echo: false
 ### Inverse propensity weighting, where the propensity scores are based on quartiles of bed size
 logit.model <- glm(penalty ~ Q1 + Q2 + Q3, family=binomial, data=final.hcris.2012)
 ps <- fitted(logit.model)
@@ -241,9 +245,9 @@ mean.t0 <- final.hcris.2012 %>% filter(penalty == 0) %>%
   summarize(mean_p = weighted.mean(price, w = ipw))
 
 ipw.diff <- mean.t1$mean_p - mean.t0$mean_p
-ipw.diff
 ```
 ```{r}
+#| echo: false
 ## Simple Linear Regression
 reg.data <- final.hcris.2012 %>% ungroup() %>%
   mutate(Q1_diff = penalty * (Q1 - mean(Q1)),
@@ -254,12 +258,11 @@ reg.data <- final.hcris.2012 %>% ungroup() %>%
 reg <- lm(price ~ penalty + Q1 + Q2 + Q3 + 
             Q1_diff + Q2_diff + Q3_diff,
           data = reg.data)
-summary(reg)
 
 ate <- coef(reg)["penalty"]
-ate
 ```
 ```{r}
+#| echo: false
 # Extract ATE estimates
 ate_near_match <- near.match$est
 ate_mal_match <- mal.match$est
@@ -279,9 +282,19 @@ ate_estimates <- data.frame(
 ```
 
 ```{r}
+#| echo: false
 # Print the table using knitr::kable()
 knitr::kable(ate_estimates, 
              caption = "ATE Estimates from Different Methods", 
              col.names = c("Method", "ATE Estimate"))
 
 ```
+
+# 8. With these different treatment effect estimators, are the results similar, identical, very different?
+## With these treatment estimators, I got identical results.
+
+# 9. Do you think you’ve estimated a causal effect of the penalty? Why or why not?
+## I don't think I've estimated a causal effect of the penality. While the matching and weighting techniques help create a more balanced comparison between penalized and non-penalized hospitals, we only estimated the effect based on quartiles of bed size, so there could still be unobserved confounders influencing both the likelihood of receiving a penalty and the hospital’s pricing behavior. For example, we didn't take into account the health of the hospitals' patient populations which could significantly affect prices. Only matching on one variable makes it hard to claim that we estimated a causal effect.
+
+# 10. Briefly describe your experience working with these data (just a few sentences). Tell me one thing you learned and one thing that really aggravated or surprised you.
+## Working with this data was definitely more frustrating than the first homework. I found that it demanded that I be much more organized with my code. One thing that really aggravated me was the multiple rounds of data cleaning that we did to final.hcris.data because I found it hard to keep track of all the changes that I was making and what the different versions of the data were called. However, I think this assignment helped me learn how applying those changes to the data can affect the estimates you get when  analyszing the data. I was getting pretty weird values at one point and had to go back to earlier versions of the data to figure out where things went wrong. This experience taught me the importance of maintaining clear and consistent documentation of data cleaning steps.
