@@ -11,8 +11,6 @@ format:
       - \floatplacement{table}{H}
 ---
 
-
-
 ```{r}
 #| include: false
 
